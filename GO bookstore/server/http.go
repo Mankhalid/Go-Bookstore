@@ -8,10 +8,6 @@ import (
 
 func addBook(w http.ResponseWriter, r *http.Request) {
 
-	http.HandleFunc("/books", func(w http.ResponseWriter, r *http.Request) {
-		log.Println("Received request on /books")
-		addBook(w, r)
-	})
 	http.HandleFunc("/test", func(w http.ResponseWriter, r *http.Request) {
 		log.Println("Received request on /test")
 	})
@@ -22,32 +18,25 @@ func addBook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var book Book
+	//
 	err := json.NewDecoder(r.Body).Decode(&book)
+	//
 	if err != nil {
 		http.Error(w, "invalid request payload", http.StatusBadRequest)
 		return
 	}
-
-	var exists bool
-	err = db.QueryRow("SELECT EXISTS(SELECT 1 FROM books WHERE isbn=?)", book.ISBN).Scan(&exists)
+	//
+	err = InsertBook(db, book, w)
 	if err != nil {
-		http.Error(w, "error checking ISBN", http.StatusInternalServerError)
-		return
-	}
-	if exists {
-		http.Error(w, "this is a duplicate isbn", http.StatusConflict)
-		return
-	}
-	_, err = db.Exec("INSERT INTO books (title,author,isbn) VALUES (?,?,?)", book.Title, book.Author, book.ISBN)
-	if err != nil {
-		http.Error(w, "error inserting book", http.StatusInternalServerError)
-		return
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(book)
+	//
 }
 
 func ListBooks(w http.ResponseWriter, r *http.Request) {
+
 	if r.Method != http.MethodGet {
 		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
 		return
@@ -59,16 +48,10 @@ func ListBooks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer rows.Close()
-
-	var books []Book
-	for rows.Next() {
-		var book Book
-		err := rows.Scan(&book.Title, &book.Author, &book.ISBN)
-		if err != nil {
-			http.Error(w, "Error scanning book", http.StatusInternalServerError)
-			return
-		}
-		books = append(books, book)
+	//
+	books, err := FetchBooks(rows, w)
+	if err != nil {
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
